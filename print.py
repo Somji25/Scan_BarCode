@@ -44,56 +44,43 @@
 
 
 from flask import Flask, request, jsonify
-from PIL import Image
-import os
+from PIL import Image, ImageDraw, ImageFont
+import io
+import base64
 
 app = Flask(__name__)
 
-def mm_to_px(mm, dpi=203):
-    return int(mm * dpi / 25.4)
-
-def print_barcode(image_path, printer_name, num_images=5):
-    label_width_mm = 45
-    label_height_mm = 20
-    image_width_mm = 13
-    image_height_mm = 9
-    dpi = 1500
-
-    canvas_width_px = mm_to_px(label_width_mm, dpi)
-    canvas_height_px = mm_to_px(label_height_mm * num_images, dpi)
-    canvas = Image.new("RGB", (canvas_width_px, canvas_height_px), "white")
-
-    image_size = (mm_to_px(image_width_mm, dpi), mm_to_px(image_height_mm, dpi))
-    img = Image.open(image_path).resize(image_size, Image.LANCZOS)
-
-    for i in range(num_images):
-        x = (canvas.width - img.width) // 2
-        y = (mm_to_px(label_height_mm, dpi) * i) + ((mm_to_px(label_height_mm, dpi) - img.height) // 2)
-        canvas.paste(img, (x, y))
-
-    output_path = r"C:\temp\barcode_print.png"
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    canvas.save(output_path)
-
-    os.system(f'mspaint /pt "{output_path}" "{printer_name}"')
-    return output_path
-
-@app.route('/print_barcode', methods=['POST'])
-def api_print_barcode():
-    data = request.json
-    image_path = data.get("image_path")
-    printer_name = data.get("printer_name")
-    num_images = data.get("num_images", 5)
-
-    if not image_path or not printer_name:
-        return jsonify({"error": "Missing required parameters"}), 400
-
+@app.route("/print_barcode", methods=["POST"])
+def print_barcode():
     try:
-        output = print_barcode(image_path, printer_name, int(num_images))
-        return jsonify({"status": "success", "output_file": output})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        data = request.get_json(force=True)
+        print("Received data:", data)
 
-if __name__ == '__main__':
+        barcode_text = data.get("barcode_text")
+        if not barcode_text:
+            return jsonify({"error": "barcode_text is required"}), 400
+        
+        # ตัวอย่าง: สร้างรูปบาร์โค้ดแบบง่ายๆ (จะเปลี่ยนเป็นบาร์โค้ดจริงก็ได้)
+        img = Image.new('RGB', (300, 100), color='white')
+        d = ImageDraw.Draw(img)
+        font = ImageFont.load_default()
+        d.text((10, 40), f"Barcode: {barcode_text}", font=font, fill=(0,0,0))
+
+        # แปลงรูปเป็น base64 ส่งกลับ (ถ้าต้องการ)
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+
+        # หรือจะสั่งพิมพ์ที่เครื่องเซิร์ฟเวอร์ได้ที่นี่ (ไม่ขอลงรายละเอียดสั่งพิมพ์นะ)
+
+        return jsonify({"status": "success", "image_base64": img_str})
+
+    except Exception as e:
+        print("Error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
 
