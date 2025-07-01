@@ -44,43 +44,68 @@
 
 
 from flask import Flask, request, jsonify
-from PIL import Image, ImageDraw, ImageFont
-import io
-import base64
+from PIL import Image, ImageDraw, ImageFont, ImageWin
+import win32print
+import win32ui
+import os
 
 app = Flask(__name__)
 
-@app.route("/print_barcode", methods=["POST"])
-def print_barcode():
+def print_image(image_path, printer_name=None):
+    if printer_name is None:
+        printer_name = win32print.GetDefaultPrinter()
+    
+    hPrinter = win32print.OpenPrinter(printer_name)
     try:
-        data = request.get_json(force=True)
-        print("Received data:", data)
+        hDC = win32ui.CreateDC()
+        hDC.CreatePrinterDC(printer_name)
 
-        barcode_text = data.get("barcode_text")
-        if not barcode_text:
-            return jsonify({"error": "barcode_text is required"}), 400
-        
-        # ตัวอย่าง: สร้างรูปบาร์โค้ดแบบง่ายๆ (จะเปลี่ยนเป็นบาร์โค้ดจริงก็ได้)
-        img = Image.new('RGB', (300, 100), color='white')
-        d = ImageDraw.Draw(img)
-        font = ImageFont.load_default()
-        d.text((10, 40), f"Barcode: {barcode_text}", font=font, fill=(0,0,0))
+        printable_area = hDC.GetDeviceCaps(8), hDC.GetDeviceCaps(10)
+        printer_size = hDC.GetDeviceCaps(110), hDC.GetDeviceCaps(111)
 
-        # แปลงรูปเป็น base64 ส่งกลับ (ถ้าต้องการ)
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        img_str = base64.b64encode(buffered.getvalue()).decode()
+        bmp = Image.open(image_path)
+        ratios = [1.0 * printable_area[0] / bmp.size[0], 1.0 * printable_area[1] / bmp.size[1]]
+        scale = min(ratios)
+        scaled_width, scaled_height = int(bmp.size[0] * scale), int(bmp.size[1] * scale)
+        bmp = bmp.resize((scaled_width, scaled_height), Image.LANCZOS)
 
-        # หรือจะสั่งพิมพ์ที่เครื่องเซิร์ฟเวอร์ได้ที่นี่ (ไม่ขอลงรายละเอียดสั่งพิมพ์นะ)
+        hDC.StartDoc("Barcode Print")
+        hDC.StartPage()
 
-        return jsonify({"status": "success", "image_base64": img_str})
+        dib = ImageWin.Dib(bmp)
+        x = int((printer_size[0] - scaled_width) / 2)
+        y = int((printer_size[1] - scaled_height) / 2)
+        dib.draw(hDC.GetHandleOutput(), (x, y, x + scaled_width, y + scaled_height))
 
-    except Exception as e:
-        print("Error:", e)
-        return jsonify({"error": str(e)}), 500
+        hDC.EndPage()
+        hDC.EndDoc()
+        hDC.DeleteDC()
+    finally:
+        win32print.ClosePrinter(hPrinter)
 
+@app.route('/print_barcode', methods=['POST'])
+def print_barcode():
+    data = request.get_json(force=True)
+    barcode_text = data.get("barcode_text")
+    
+    if not barcode_text:
+        return jsonify({"error": "Missing barcode_text"}), 400
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # สร้างรูป
+    img = Image.new("RGB", (300, 100), color="white")
+    d = ImageDraw.Draw(img)
+    font = ImageFont.load_default()
+    d.text((10, 40), f"{barcode_text}", font=font, fill=(0, 0, 0))
+
+    file_path = "barcode_output.png"
+    img.save(file_path)
+
+    # สั่งพิมพ์
+    print_image(file_path)
+
+    return jsonify({"status": "Printed", "barcode": barcode_text})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
 
 
