@@ -45,39 +45,34 @@
 
 from flask import Flask, request, jsonify
 from PIL import Image
-import os
 import io
 import base64
-import win32print
 import win32api
 
 app = Flask(__name__)
 
 def mm_to_px(mm, dpi=203):
-    """แปลงหน่วยมิลลิเมตรเป็นพิกเซล"""
     return int(mm * dpi / 25.4)
 
-def generate_label_sheet(image_data, copies, output_path):
-    """
-    สร้างภาพฉลากเรียงหลายชุดจาก base64 image
-    - image_data: base64 string ของรูปภาพ
-    - copies: จำนวนฉลากที่ต้องการ
-    - output_path: path เก็บไฟล์ภาพที่สร้าง
-    """
+def generate_label_sheet(image_data_base64, copies, output_path):
+    # กำหนดขนาดฉลากและภาพ
     label_width_mm = 45
     label_height_mm = 20
     image_width_mm = 13
     image_height_mm = 9
     dpi = 1500
 
+    # ขนาด canvas (รวมฉลากหลายชุดตามจำนวน copies)
     canvas_width_px = mm_to_px(label_width_mm, dpi)
     canvas_height_px = mm_to_px(label_height_mm * copies, dpi)
     canvas = Image.new("RGB", (canvas_width_px, canvas_height_px), "white")
 
-    image = Image.open(io.BytesIO(base64.b64decode(image_data)))
+    # เปิดรูปจาก base64 และ resize
+    image = Image.open(io.BytesIO(base64.b64decode(image_data_base64)))
     image_size = (mm_to_px(image_width_mm, dpi), mm_to_px(image_height_mm, dpi))
     image = image.resize(image_size, Image.LANCZOS)
 
+    # วางรูปลงใน canvas ตามจำนวน copies
     for i in range(copies):
         x = (canvas.width - image.width) // 2
         y = (mm_to_px(label_height_mm, dpi) * i) + ((mm_to_px(label_height_mm, dpi) - image.height) // 2)
@@ -87,11 +82,7 @@ def generate_label_sheet(image_data, copies, output_path):
     return output_path
 
 def print_image(image_path):
-    """
-    สั่งพิมพ์ไฟล์ภาพไปยังเครื่องพิมพ์ Windows
-    ปรับชื่อเครื่องพิมพ์ที่นี่ (เครื่องที่ติดตั้งไดรเวอร์อยู่แล้ว)
-    """
-    printer_name = "HP LaserJet M1536dnf MFP"  # <-- แก้ชื่อเครื่องพิมพ์ตรงนี้
+    printer_name = "HP LaserJet M1536dnf MFP"  # <-- เปลี่ยนชื่อเครื่องปริ้นที่นี่ตามจริง
     win32api.ShellExecute(
         0,
         "printto",
@@ -105,8 +96,8 @@ def print_image(image_path):
 def print_barcode():
     try:
         data = request.json
-        image_base64 = data.get("image_base64")
-        copies = int(data.get("copies", 1))
+        image_base64 = data.get("image_base64")  # Base64 ของรูปภาพจาก Power Automate
+        copies = int(data.get("copies", 1))      # จำนวนฉลากที่ต้องการพิมพ์
 
         if not image_base64:
             return jsonify({"status": "error", "message": "Missing image_base64"}), 400
@@ -116,10 +107,8 @@ def print_barcode():
         print_image(output_path)
 
         return jsonify({"status": "success", "message": f"Printed {copies} copies."})
-
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
-    # รัน Flask บนทุก IP ที่พอร์ต 5000
     app.run(host="0.0.0.0", port=5000)
