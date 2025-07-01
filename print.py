@@ -44,68 +44,75 @@
 
 
 from flask import Flask, request, jsonify
-from PIL import Image, ImageDraw, ImageFont, ImageWin
-import win32print
-import win32ui
+from PIL import Image
 import os
+import io
+import base64
+import win32print
+import win32api
 
 app = Flask(__name__)
 
-def print_image(image_path, printer_name=None):
-    if printer_name is None:
-        printer_name = "HP LaserJet M1536dnf MFP"
-    
-    hPrinter = win32print.OpenPrinter(printer_name)
-    try:
-        hDC = win32ui.CreateDC()
-        hDC.CreatePrinterDC(printer_name)
+def mm_to_px(mm, dpi=203):
+    return int(mm * dpi / 25.4)
 
-        printable_area = hDC.GetDeviceCaps(8), hDC.GetDeviceCaps(10)
-        printer_size = hDC.GetDeviceCaps(110), hDC.GetDeviceCaps(111)
+def generate_label_sheet(image_data, copies, output_path):
+    # ขนาดฉลากและภาพ
+    label_width_mm = 45
+    label_height_mm = 20
+    image_width_mm = 13
+    image_height_mm = 9
+    dpi = 1500
 
-        bmp = Image.open(image_path)
-        ratios = [1.0 * printable_area[0] / bmp.size[0], 1.0 * printable_area[1] / bmp.size[1]]
-        scale = min(ratios)
-        scaled_width, scaled_height = int(bmp.size[0] * scale), int(bmp.size[1] * scale)
-        bmp = bmp.resize((scaled_width, scaled_height), Image.LANCZOS)
+    # ขนาด canvas
+    canvas_width_px = mm_to_px(label_width_mm, dpi)
+    canvas_height_px = mm_to_px(label_height_mm * copies, dpi)
+    canvas = Image.new("RGB", (canvas_width_px, canvas_height_px), "white")
 
-        hDC.StartDoc("Barcode Print")
-        hDC.StartPage()
+    # โหลดภาพจาก base64 และ resize
+    image = Image.open(io.BytesIO(base64.b64decode(image_data)))
+    image_size = (mm_to_px(image_width_mm, dpi), mm_to_px(image_height_mm, dpi))
+    image = image.resize(image_size, Image.LANCZOS)
 
-        dib = ImageWin.Dib(bmp)
-        x = int((printer_size[0] - scaled_width) / 2)
-        y = int((printer_size[1] - scaled_height) / 2)
-        dib.draw(hDC.GetHandleOutput(), (x, y, x + scaled_width, y + scaled_height))
+    # วางภาพลงใน canvas
+    for i in range(copies):
+        x = (canvas.width - image.width) // 2
+        y = (mm_to_px(label_height_mm, dpi) * i) + ((mm_to_px(label_height_mm, dpi) - image.height) // 2)
+        canvas.paste(image, (x, y))
 
-        hDC.EndPage()
-        hDC.EndDoc()
-        hDC.DeleteDC()
-    finally:
-        win32print.ClosePrinter(hPrinter)
+    canvas.save(output_path)
+    return output_path
+
+def print_image(image_path):
+    printer_name = "HP LaserJet M1536dnf MFP"  # ← ใส่ชื่อเครื่องพิมพ์ที่นี่
+    win32api.ShellExecute(
+        0,
+        "printto",
+        image_path,
+        f'"{printer_name}"',
+        ".",
+        0
+    )
 
 @app.route('/print_barcode', methods=['POST'])
 def print_barcode():
-    data = request.get_json(force=True)
-    barcode_text = data.get("barcode_text")
+    try:
+        data = request.json
+        image_base64 = data.get("image_base64")  # จาก Power Automate
+        copies = int(data.get("copies", 1))      # จำนวนฉลาก
+
+        if not image_base64:
+            return jsonify({"status": "error", "message": "Missing image_base64"}), 400
+
+        # บันทึกและพิมพ์
+        output_path = "barcode_sheet.png"
+        generate_label_sheet(image_base64, copies, output_path)
+        print_image(output_path)
+
+        return jsonify({"status": "success", "message": f"Printed {copies} copies."})
     
-    if not barcode_text:
-        return jsonify({"error": "Missing barcode_text"}), 400
-
-    # สร้างรูป
-    img = Image.new("RGB", (300, 100), color="white")
-    d = ImageDraw.Draw(img)
-    font = ImageFont.load_default()
-    d.text((10, 40), f"{barcode_text}", font=font, fill=(0, 0, 0))
-
-    file_path = "barcode_output.png"
-    img.save(file_path)
-
-    # สั่งพิมพ์
-    print_image(file_path)
-
-    return jsonify({"status": "Printed", "barcode": barcode_text})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
-
-
+    app.run(host="0.0.0.0", port=5000)
