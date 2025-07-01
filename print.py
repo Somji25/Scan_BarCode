@@ -53,7 +53,7 @@ app = Flask(__name__)
 
 def print_image(image_path, printer_name=None):
     if printer_name is None:
-        printer_name = win32print.GetDefaultPrinter()
+        printer_name = "HP LaserJet M1536dnf MFP"
     
     hPrinter = win32print.OpenPrinter(printer_name)
     try:
