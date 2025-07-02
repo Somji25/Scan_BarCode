@@ -1,7 +1,7 @@
 import os
-import requests
-from PIL import Image
+import base64
 from io import BytesIO
+from PIL import Image
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -32,30 +32,32 @@ def print_barcode(img: Image.Image, printer_name, num_images=5):
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     canvas.save(output_path)
 
+    # สั่งพิมพ์ด้วย mspaint (Windows)
     os.system(f'mspaint /pt "{output_path}" "{printer_name}"')
     return output_path
 
 @app.route('/print_barcode', methods=['POST'])
 def api_print_barcode():
     data = request.json
-    image_url = data.get("image_url")
+
+    base64_image = data.get("base64_image")
     printer_name = data.get("printer_name")
     num_images = int(data.get("num_images", 5))
 
-    if not image_url or not printer_name:
+    if not base64_image or not printer_name:
         return jsonify({"error": "Missing required parameters"}), 400
 
     try:
-        response = requests.get(image_url)
-        if response.status_code != 200:
-            return jsonify({"error": "Unable to download image"}), 400
+        # ตัด prefix "data:image/png;base64," ออกถ้ามี
+        if base64_image.startswith("data:image"):
+            base64_image = base64_image.split(",", 1)[1]
 
-        img = Image.open(BytesIO(response.content))
+        img_data = base64.b64decode(base64_image)
+        img = Image.open(BytesIO(img_data))
         output = print_barcode(img, printer_name, num_images)
         return jsonify({"status": "success", "output_file": output})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True)
-
+    app.run(host="0.0.0.0", port=5000)
