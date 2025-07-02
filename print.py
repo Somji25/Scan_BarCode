@@ -4,7 +4,7 @@ import requests
 app = Flask(__name__)
 
 # เปลี่ยนเป็น IP หรือ URL ของ Windows Agent จริง ๆ
-WINDOWS_AGENT_URL = "http://10.215.102.125:5001"
+WINDOWS_AGENT_URL = "http://10.215.102.125:5001/print"
 
 @app.route('/print_request', methods=['POST'])
 def forward_to_windows():
