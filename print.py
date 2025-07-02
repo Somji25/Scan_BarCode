@@ -1,41 +1,30 @@
 from flask import Flask, request, jsonify
+from PIL import Image
+import io
+import base64
 import os
-from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+def print_image(img, printer_name):
+    temp_path = "temp_print.png"
+    img.save(temp_path)
+    os.system(f'mspaint /pt "{temp_path}" "{printer_name}"')
+    os.remove(temp_path)
 
-@app.route('/upload_barcode', methods=['POST'])
-def upload_barcode():
-    # ตรวจสอบว่ามีไฟล์มาไหม
-    if 'file' not in request.files:
-        return jsonify({"error": "No file part"}), 400
-    
-    file = request.files['file']
-    
-    # ตรวจสอบว่าเลือกไฟล์มาหรือยัง
-    if file.filename == '':
-        return jsonify({"error": "No selected file"}), 400
-    
-    # ป้องกันชื่อไฟล์ไม่ปลอดภัย
-    filename = secure_filename(file.filename)
-    
-    # บันทึกไฟล์ไปที่โฟลเดอร์ uploads
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
-    file.save(filepath)
+@app.route('/print_barcode', methods=['POST'])
+def print_barcode():
+    data = request.json
+    if not data or 'imageBase64' not in data or 'printer_name' not in data:
+        return jsonify({"error": "ข้อมูลไม่ครบ"}), 400
 
-    # ส่งกลับ path หรือ URL สำหรับให้ client ดึงไฟล์ไปพิมพ์ต่อได้
-    # (ปรับ URL ตามโดเมนจริงของคุณ)
-    file_url = f"http://your-render-domain/uploads/{filename}"
-    
-    return jsonify({
-        "status": "success",
-        "message": f"File saved as {filename}",
-        "file_url": file_url
-    })
+    try:
+        img_data = base64.b64decode(data['imageBase64'])
+        img = Image.open(io.BytesIO(img_data))
+        print_image(img, data['printer_name'])
+        return jsonify({"status": "success", "message": "พิมพ์เรียบร้อย"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
-    # รัน server บนพอร์ต 5000
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host='0.0.0.0', port=5000)
