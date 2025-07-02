@@ -3,7 +3,7 @@ import requests
 
 app = Flask(__name__)
 
-LOCAL_PC_API_URL = "http://127.0.0.1:6000/print"  # เปลี่ยนเป็น IP และ port เครื่อง Local PC
+LOCAL_PC_API_URL = "http://10.215.102.125:6000/print"  # เปลี่ยนเป็น IP และ port เครื่อง Local PC
 
 @app.route('/print_barcode', methods=['POST'])
 def print_barcode():
