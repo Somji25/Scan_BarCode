@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 
 app = Flask(__name__)
-WINDOWS_AGENT_URL = "http://<WINDOWS_IP>:5001/print"  # เปลี่ยนเป็น IP จริง
+WINDOWS_AGENT_URL = "http://127.0.0.1:5001/print"  # เปลี่ยนเป็น IP จริง
 
 @app.route('/print_request', methods=['POST'])
 def forward_to_windows():
