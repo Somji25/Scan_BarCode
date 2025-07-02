@@ -1,23 +1,27 @@
 from flask import Flask, request, jsonify
-import requests
+import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# เปลี่ยนเป็น IP หรือ URL ของ Windows Agent จริง ๆ
-WINDOWS_AGENT_URL = "http://10.215.102.125:5001/print"
+@app.route('/upload_barcode', methods=['POST'])
+def upload_barcode():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
 
-@app.route('/print_request', methods=['POST'])
-def forward_to_windows():
-    data = request.json
-    # ตรวจสอบ parameter เบื้องต้น
-    if not data.get("image_url") or not data.get("printer_name"):
-        return jsonify({"error": "Missing required parameters"}), 400
-    try:
-        # ส่งคำขอไปยัง Windows Agent
-        r = requests.post(WINDOWS_AGENT_URL, json=data, timeout=10)
-        return jsonify({"message": "Forwarded", "agent_response": r.json()}), r.status_code
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(filepath)
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)  # port 5000 หรือพอร์ตที่ Render กำหนด
+    # คุณอาจส่ง URL หรือ path ให้ client ดึงไปพิมพ์ได้ เช่น
+    # return jsonify({"status": "success", "file_path": filepath})
+
+    return jsonify({"status": "success", "message": f"File saved to {filepath}"})
+
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", port=5000)
